@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using NLog;
 using Shadowsocks.Controller;
 using Shadowsocks.Util.Sockets;
 
@@ -11,6 +12,8 @@ namespace Shadowsocks.Proxy
 {
     public class HttpProxy : IProxy
     {
+        private static Logger logger = LogManager.GetCurrentClassLogger();
+
         private class FakeAsyncResult : IAsyncResult
         {
             public readonly HttpState innerState;
@@ -67,7 +70,7 @@ namespace Shadowsocks.Proxy
             "CONNECT {0} HTTP/1.1" + HTTP_CRLF + 
             "Host: {0}" + HTTP_CRLF +
             "Proxy-Connection: keep-alive" + HTTP_CRLF +
-            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36" + HTTP_CRLF +
+            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.83 Safari/537.36" + HTTP_CRLF +
             "{1}" +         // Proxy-Authorization if any
             "" + HTTP_CRLF; // End with an empty line
         private const string PROXY_AUTH_TEMPLATE = "Proxy-Authorization: Basic {0}" + HTTP_CRLF;
@@ -179,7 +182,7 @@ namespace Shadowsocks.Proxy
 
         private bool OnLineRead(string line, object state)
         {
-            Logging.Debug(line);
+            logger.Trace(line);
 
             if (_respondLineCount == 0)
             {

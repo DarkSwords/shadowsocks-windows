@@ -1,24 +1,35 @@
-﻿using System;
-using System.Collections;
-using System.Globalization;
-using System.IO;
+﻿using Shadowsocks.Encryption;
+using Shadowsocks.Model;
+using Shadowsocks.Util;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using Shadowsocks.Encryption;
-using Shadowsocks.Model;
-using Shadowsocks.Properties;
-using Shadowsocks.Util;
-using System.Threading.Tasks;
+using System.Web;
+using NLog;
 
 namespace Shadowsocks.Controller
 {
     public class PACServer : Listener.Service
     {
+        private static Logger logger = LogManager.GetCurrentClassLogger();
+
         public const string RESOURCE_NAME = "pac";
 
-        private string PacSecret { get; set; } = "";
-
+        private string PacSecret
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(_cachedPacSecret))
+                {
+                    var rd = new byte[32];
+                    RNG.GetBytes(rd);
+                    _cachedPacSecret = HttpServerUtility.UrlTokenEncode(rd);
+                }
+                return _cachedPacSecret;
+            }
+        }
+        private string _cachedPacSecret = "";
         public string PacUrl { get; private set; } = "";
 
         private Configuration _config;
@@ -31,26 +42,16 @@ namespace Shadowsocks.Controller
 
         public void UpdatePACURL(Configuration config)
         {
-            this._config = config;
-
-            if (config.secureLocalPac)
-            {
-                var rd = new byte[32];
-                RNG.GetBytes(rd);
-                PacSecret = $"&secret={Convert.ToBase64String(rd)}";
-            }
-            else
-            {
-                PacSecret = "";
-            }
-
-            PacUrl = $"http://{config.localHost}:{config.localPort}/{RESOURCE_NAME}?t={GetTimestamp(DateTime.Now)}{PacSecret}";
+            _config = config;
+            string usedSecret = _config.secureLocalPac ? $"&secret={PacSecret}" : "";
+            string contentHash = GetHash(_pacDaemon.GetPACContent());
+            PacUrl = $"http://{config.localHost}:{config.localPort}/{RESOURCE_NAME}?hash={contentHash}{usedSecret}";
+            logger.Debug("Set PAC URL:" + PacUrl);
         }
 
-
-        private static string GetTimestamp(DateTime value)
+        private static string GetHash(string content)
         {
-            return value.ToString("yyyyMMddHHmmssfff");
+            return HttpServerUtility.UrlTokenEncode(MbedTLS.MD5(Encoding.ASCII.GetBytes(content)));
         }
 
         public override bool Handle(byte[] firstPacket, int length, Socket socket, object state)
@@ -70,11 +71,11 @@ namespace Shadowsocks.Controller
                     Host: www.example.com
                     Accept-Language: en, mi 
                  */
-        
+
                 string request = Encoding.UTF8.GetString(firstPacket, 0, length);
                 string[] lines = request.Split('\r', '\n');
                 bool hostMatch = false, pathMatch = false, useSocks = false;
-                bool secretMatch = PacSecret.IsNullOrEmpty();
+                bool secretMatch = !_config.secureLocalPac;
 
                 if (lines.Length < 2)   // need at lease RequestLine + Host
                 {
@@ -164,22 +165,22 @@ namespace Shadowsocks.Controller
 
                 string proxy = GetPACAddress(localEndPoint, useSocks);
 
-                string pacContent = _pacDaemon.GetPACContent().Replace("__PROXY__", proxy);
-
-                string responseHead = String.Format(@"HTTP/1.1 200 OK
-Server: Shadowsocks
+                string pacContent = $"var __PROXY__ = '{proxy}';\n" + _pacDaemon.GetPACContent();
+                string responseHead =
+$@"HTTP/1.1 200 OK
+Server: ShadowsocksWindows/{UpdateChecker.Version}
 Content-Type: application/x-ns-proxy-autoconfig
-Content-Length: {0}
+Content-Length: { Encoding.UTF8.GetBytes(pacContent).Length}
 Connection: Close
 
-", Encoding.UTF8.GetBytes(pacContent).Length);
+";
                 byte[] response = Encoding.UTF8.GetBytes(responseHead + pacContent);
                 socket.BeginSend(response, 0, response.Length, 0, new AsyncCallback(SendCallback), socket);
                 Utils.ReleaseMemory(true);
             }
             catch (Exception e)
             {
-                Logging.LogUsefulException(e);
+                logger.LogUsefulException(e);
                 socket.Close();
             }
         }

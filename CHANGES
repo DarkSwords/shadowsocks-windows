@@ -1,3 +1,67 @@
+4.2.0.1 2020-09-26
+- Fix domain rule handling in PAC script (#2956)
+
+4.2.0.0 2020-09-10
+- Update TCPHandler.lastActivity (#2858)
+- Add Franch translation (#2861)
+- New option for ss:// URL association (#2855)
+- Updated Korean Language (#2871)
+- Decouple statistic and TCPRelay (#2872)
+- Fix nLogConfig NullReferenceExceltion (#2887)
+- Use v2ray GeoSsite to replace GFWList (#2875)
+- Optimize the updater and downloader (#2910)
+- Update SIP002 (#2904)
+- Update Japanese translations
+- Fix improperly parsed remark section (#2935)
+- Other minor bug fixes and improvements
+
+4.1.10.0 2020-04-11
+- Fix NLog config file issue (#2841, #2846)
+- Tweak log level
+
+4.1.9.3 2020-03-31
+- Set default method to chacha20-ietf-poly1305
+- Using hash in PAC URL (#2759)
+- Rename and translate title of statistics form (#2768)
+- Russian translation (#2767)
+- Refine Updated Notification logic
+- Using NLog (#2783)
+- Bug fix: wrong server in tray menu (#2782)
+- Deprecate unsafe encryption method (#2757, #2801)
+- Bug fix: server config is overwritten by others when moving up/down (#2830)
+- Other minor bug fixes and improvements
+
+4.1.9.2 2019-12-25
+- Fix i18n issues (#2740, #2741)
+
+4.1.9.1 2019-12-22
+- Fix #2739: PAC does not work
+- Translate Show Plugin Option
+
+4.1.9.0 2019-12-21
+- Refine merge PAC+abp script logic (#2598)
+- Format the proxy hostname in GfwListUpdater (#2616)
+- Fix the trayIcon display issue under Win10 dark theme (#2658)
+- Set default encryption method as chacha20-ietf-poly1305 (#2699)
+- Translate statistics config form (#2698)
+- Update .Net Framework download link (#2731)
+- Use MD5 hash instead of timestamp for PAC URL parameter (#2705)
+- Add option "Show Plugin Output" (#2722)
+- Support custom GFWListUrl defined in config file (#2728)
+- Implement new I18N csv structure (#2712)
+- Refine message when plugin program file does not exist (#2730)
+- Other minor bug fixes and improvements
+
+4.1.8 2019-10-31
+- Update the nuget configurations and packages
+- Fix some crash about thread-safe in statistics (#2591)
+- Fix server list index invalidation (#2543, #2542)
+- Refine PAC server (#2539)
+- Update the GFWList via IPv6Loopback when available
+- Modify PAC request behavior (#2526)
+- Fix .NET 4.7.2 on Win7 TLS compatibility (#2473)
+- Other minor bug fixes and improvements
+
 4.1.7.1 2019-07-14
 - Fix unexpected server delete behavior (#2459)
 - Reduce info log when checking Windows 10 Light Theme

@@ -11,11 +11,14 @@ using Shadowsocks.Properties;
 using Shadowsocks.Model;
 using Shadowsocks.Util;
 using System.Text;
+using NLog;
 
 namespace Shadowsocks.View
 {
     public partial class LogForm : Form
     {
+        private static Logger logger = LogManager.GetCurrentClassLogger();
+
         long lastOffset;
         string filename;
         Timer timer;
@@ -38,12 +41,26 @@ namespace Shadowsocks.View
         TextAnnotation outboundAnnotation = new TextAnnotation();
         #endregion
 
-        public LogForm(ShadowsocksController controller, string filename)
+        public LogForm(ShadowsocksController controller)
         {
             this.controller = controller;
-            this.filename = filename;
+
             InitializeComponent();
             Icon = Icon.FromHandle(Resources.ssw128.GetHicon());
+
+            var nLogConfig = NLogConfig.LoadXML();
+            try
+            {
+                this.filename = nLogConfig.GetLogFileName();
+            }
+            catch(Exception)
+            {
+                // failed to get the file name
+            }
+            if (string.IsNullOrEmpty(this.filename))
+            {
+                LogMessageTextBox.AppendText("Cannot get the log file name from NLog config file. Please check if the nlog config file exists with corresponding XML nodes.");
+            }
 
             LogViewerConfig config = controller.GetConfigurationCopy().logViewer;
 
@@ -145,21 +162,7 @@ namespace Shadowsocks.View
 
         private void UpdateTexts()
         {
-            FileMenuItem.Text = I18N.GetString("&File");
-            OpenLocationMenuItem.Text = I18N.GetString("&Open Location");
-            ExitMenuItem.Text = I18N.GetString("E&xit");
-            ClearLogsButton.Text = I18N.GetString("&Clear Logs");
-            ChangeFontButton.Text = I18N.GetString("Change &Font");
-            WrapTextCheckBox.Text = I18N.GetString("&Wrap Text");
-            TopMostCheckBox.Text = I18N.GetString("&Top Most");
-            ViewMenuItem.Text = I18N.GetString("&View");
-            ClearLogsMenuItem.Text = I18N.GetString("&Clear Logs");
-            ChangeFontMenuItem.Text = I18N.GetString("Change &Font");
-            WrapTextMenuItem.Text = I18N.GetString("&Wrap Text");
-            TopMostMenuItem.Text = I18N.GetString("&Top Most");
-            ShowToolbarMenuItem.Text = I18N.GetString("&Show Toolbar");
-            Text = I18N.GetString("Log Viewer");
-            // traffic chart
+            I18N.TranslateForm(this);
             trafficChart.Series["Inbound"].LegendText = I18N.GetString("Inbound");
             trafficChart.Series["Outbound"].LegendText = I18N.GetString("Outbound");
         }
@@ -172,6 +175,8 @@ namespace Shadowsocks.View
 
         private void InitContent()
         {
+            if (string.IsNullOrEmpty(filename) || !File.Exists(filename))
+                return;
             using (StreamReader reader = new StreamReader(new FileStream(filename,
                      FileMode.Open, FileAccess.Read, FileShare.ReadWrite)))
             {
@@ -184,7 +189,7 @@ namespace Shadowsocks.View
                 string line = "";
                 StringBuilder appendText = new StringBuilder(1024);
                 while ((line = reader.ReadLine()) != null)
-                    appendText.Append(line + Environment.NewLine);
+                    appendText.AppendLine(line);
 
                 LogMessageTextBox.AppendText(appendText.ToString());
                 LogMessageTextBox.ScrollToCaret();
@@ -195,6 +200,11 @@ namespace Shadowsocks.View
 
         private void UpdateContent()
         {
+            this.Text = I18N.GetString("Log Viewer") +
+                        $" [in: {Utils.FormatBytes(controller.InboundCounter)}, out: {Utils.FormatBytes(controller.OutboundCounter)}]";
+
+            if (string.IsNullOrEmpty(filename) || !File.Exists(filename))
+                return;
             try
             {
                 using (StreamReader reader = new StreamReader(new FileStream(filename,
@@ -208,7 +218,7 @@ namespace Shadowsocks.View
                     while ((line = reader.ReadLine()) != null)
                     {
                         changed = true;
-                        appendText.Append(line + Environment.NewLine);
+                        appendText.AppendLine(line);
                     }
 
                     if (changed)
@@ -223,9 +233,6 @@ namespace Shadowsocks.View
             catch (FileNotFoundException)
             {
             }
-
-            this.Text = I18N.GetString("Log Viewer") +
-                $" [in: {Utils.FormatBytes(controller.InboundCounter)}, out: {Utils.FormatBytes(controller.OutboundCounter)}]";
         }
 
         private void LogForm_Load(object sender, EventArgs e)
@@ -284,7 +291,7 @@ namespace Shadowsocks.View
         private void OpenLocationMenuItem_Click(object sender, EventArgs e)
         {
             string argument = "/select, \"" + filename + "\"";
-            Logging.Debug(argument);
+            logger.Debug(argument);
             System.Diagnostics.Process.Start("explorer.exe", argument);
         }
 
@@ -301,7 +308,11 @@ namespace Shadowsocks.View
         #region Clean up the content in LogMessageTextBox.
         private void DoClearLogs()
         {
-            Logging.Clear();
+            try
+            {
+                File.Delete(filename);
+            }
+            catch { }
             lastOffset = 0;
             LogMessageTextBox.Clear();
         }
@@ -331,7 +342,7 @@ namespace Shadowsocks.View
             }
             catch (Exception ex)
             {
-                Logging.LogUsefulException(ex);
+                logger.LogUsefulException(ex);
                 MessageBox.Show(ex.Message);
             }
         }

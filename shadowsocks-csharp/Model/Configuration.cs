@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
+using NLog;
 using Shadowsocks.Controller;
 
 namespace Shadowsocks.Model
@@ -9,6 +10,9 @@ namespace Shadowsocks.Model
     [Serializable]
     public class Configuration
     {
+        [JsonIgnore]
+        private static readonly Logger logger = LogManager.GetCurrentClassLogger();
+
         public string version;
 
         public List<Server> configs;
@@ -20,24 +24,49 @@ namespace Shadowsocks.Model
         public bool enabled;
         public bool shareOverLan;
         public bool isDefault;
-        public bool isIPv6Enabled = false;
         public int localPort;
         public bool portableMode = true;
+        public bool showPluginOutput;
         public string pacUrl;
+
         public bool useOnlinePac;
         public bool secureLocalPac = true;
         public bool availabilityStatistics;
         public bool autoCheckUpdate;
         public bool checkPreRelease;
         public bool isVerboseLogging;
+
+        // hidden options
+        public bool isIPv6Enabled = false; // for experimental ipv6 support
+        public bool generateLegacyUrl = false; // for pre-sip002 url compatibility
+        public string geositeUrl; // for custom geosite source (and rule group)
+        public string geositeGroup = "geolocation-!cn";
+        public bool geositeBlacklistMode = true;
+
+
+        //public NLogConfig.LogLevel logLevel;
         public LogViewerConfig logViewer;
         public ProxyConfig proxy;
         public HotkeyConfig hotkey;
 
+        [JsonIgnore]
+        NLogConfig nLogConfig;
+
         private static readonly string CONFIG_FILE = "gui-config.json";
+#if DEBUG
+        private static readonly NLogConfig.LogLevel verboseLogLevel = NLogConfig.LogLevel.Trace;
+#else
+        private static readonly NLogConfig.LogLevel verboseLogLevel =  NLogConfig.LogLevel.Debug;
+#endif
+
+
+        [JsonIgnore]
+        public bool updated = false;
+
         [JsonIgnore]
         public string localHost => GetLocalHost();
-        private string GetLocalHost() {
+        private string GetLocalHost()
+        {
             return isIPv6Enabled ? "[::1]" : "127.0.0.1";
         }
         public Server GetCurrentServer()
@@ -71,11 +100,16 @@ namespace Shadowsocks.Model
 
         public static Configuration Load()
         {
+            Configuration config;
             try
             {
                 string configContent = File.ReadAllText(CONFIG_FILE);
-                Configuration config = JsonConvert.DeserializeObject<Configuration>(configContent);
+                config = JsonConvert.DeserializeObject<Configuration>(configContent);
                 config.isDefault = false;
+                if (UpdateChecker.Asset.CompareVersion(UpdateChecker.Version, config.version ?? "0") > 0)
+                {
+                    config.updated = true;
+                }
 
                 if (config.configs == null)
                     config.configs = new List<Server>();
@@ -91,20 +125,19 @@ namespace Shadowsocks.Model
                     config.proxy = new ProxyConfig();
                 if (config.hotkey == null)
                     config.hotkey = new HotkeyConfig();
-                if (!System.Net.Sockets.Socket.OSSupportsIPv6) {
+                if (!System.Net.Sockets.Socket.OSSupportsIPv6)
+                {
                     config.isIPv6Enabled = false; // disable IPv6 if os not support
                 }
                 //TODO if remote host(server) do not support IPv6 (or DNS resolve AAAA TYPE record) disable IPv6?
 
                 config.proxy.CheckConfig();
-
-                return config;
             }
             catch (Exception e)
             {
                 if (!(e is FileNotFoundException))
-                    Logging.LogUsefulException(e);
-                return new Configuration
+                    logger.LogUsefulException(e);
+                config = new Configuration
                 {
                     index = 0,
                     isDefault = true,
@@ -116,9 +149,34 @@ namespace Shadowsocks.Model
                     },
                     logViewer = new LogViewerConfig(),
                     proxy = new ProxyConfig(),
-                    hotkey = new HotkeyConfig()
+                    hotkey = new HotkeyConfig(),
                 };
             }
+
+            try
+            {
+                config.nLogConfig = NLogConfig.LoadXML();
+                switch (config.nLogConfig.GetLogLevel())
+                {
+                    case NLogConfig.LogLevel.Fatal:
+                    case NLogConfig.LogLevel.Error:
+                    case NLogConfig.LogLevel.Warn:
+                    case NLogConfig.LogLevel.Info:
+                        config.isVerboseLogging = false;
+                        break;
+                    case NLogConfig.LogLevel.Debug:
+                    case NLogConfig.LogLevel.Trace:
+                        config.isVerboseLogging = true;
+                        break;
+                }
+            }
+            catch (Exception e)
+            {
+                // todo: route the error to UI since there is no log file in this scenario
+                logger.Error(e, "Cannot get the log level from NLog config file. Please check if the nlog config file exists with corresponding XML nodes.");
+            }
+
+            return config;
         }
 
         public static void Save(Configuration config)
@@ -139,16 +197,26 @@ namespace Shadowsocks.Model
                     sw.Write(jsonString);
                     sw.Flush();
                 }
+                try
+                {
+                    // apply changes to NLog.config
+                    config.nLogConfig.SetLogLevel(config.isVerboseLogging ? verboseLogLevel : NLogConfig.LogLevel.Info);
+                    NLogConfig.SaveXML(config.nLogConfig);
+                }
+                catch (Exception e)
+                {
+                    logger.Error(e, "Cannot set the log level to NLog config file. Please check if the nlog config file exists with corresponding XML nodes.");
+                }
             }
             catch (IOException e)
             {
-                Logging.LogUsefulException(e);
+                logger.LogUsefulException(e);
             }
         }
 
         public static Server AddDefaultServerOrServer(Configuration config, Server server = null, int? index = null)
         {
-            if (config != null && config.configs != null)
+            if (config?.configs != null)
             {
                 server = (server ?? GetDefaultServer());
 
@@ -165,12 +233,6 @@ namespace Shadowsocks.Model
         public static Server GetDefaultServer()
         {
             return new Server();
-        }
-
-        private static void Assert(bool condition)
-        {
-            if (!condition)
-                throw new Exception(I18N.GetString("assertion failure"));
         }
 
         public static void CheckPort(int port)

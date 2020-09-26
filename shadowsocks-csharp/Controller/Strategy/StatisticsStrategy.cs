@@ -5,7 +5,7 @@ using System.Net;
 using System.Threading;
 
 using Newtonsoft.Json;
-
+using NLog;
 using Shadowsocks.Model;
 
 namespace Shadowsocks.Controller.Strategy
@@ -14,6 +14,8 @@ namespace Shadowsocks.Controller.Strategy
 
     internal class StatisticsStrategy : IStrategy, IDisposable
     {
+        private static Logger logger = LogManager.GetCurrentClassLogger();
+
         private readonly ShadowsocksController _controller;
         private Server _currentServer;
         private readonly Timer _timer;
@@ -34,7 +36,7 @@ namespace Shadowsocks.Controller.Strategy
 
         private void ReloadStatisticsAndChooseAServer(object obj)
         {
-            Logging.Debug("Reloading statistics and choose a new server....");
+            logger.Debug("Reloading statistics and choose a new server....");
             var servers = _controller.GetCurrentConfiguration().configs;
             LoadStatistics();
             ChooseNewServer(servers);
@@ -74,7 +76,7 @@ namespace Shadowsocks.Controller.Strategy
 
             if (score != null)
             {
-                Logging.Debug($"Highest score: {score} {JsonConvert.SerializeObject(averageRecord, Formatting.Indented)}");
+                logger.Debug($"Highest score: {score} {JsonConvert.SerializeObject(averageRecord, Formatting.Indented)}");
             }
             return score;
         }
@@ -90,7 +92,7 @@ namespace Shadowsocks.Controller.Strategy
                 var serversWithStatistics = (from server in servers
                     let id = server.Identifier()
                     where _filteredStatistics.ContainsKey(id)
-                    let score = GetScore(server.Identifier(), _filteredStatistics[server.Identifier()])
+                    let score = GetScore(id, _filteredStatistics[id])
                     where score != null
                     select new
                     {
@@ -107,12 +109,12 @@ namespace Shadowsocks.Controller.Strategy
                 var bestResult = serversWithStatistics
                     .Aggregate((server1, server2) => server1.score > server2.score ? server1 : server2);
 
-                LogWhenEnabled($"Switch to server: {bestResult.server.FriendlyName()} by statistics: score {bestResult.score}");
+                LogWhenEnabled($"Switch to server: {bestResult.server.ToString()} by statistics: score {bestResult.score}");
                 _currentServer = bestResult.server;
             }
             catch (Exception e)
             {
-                Logging.LogUsefulException(e);
+                logger.LogUsefulException(e);
             }
         }
 
@@ -145,7 +147,7 @@ namespace Shadowsocks.Controller.Strategy
 
         public void SetFailure(Server server)
         {
-            Logging.Debug($"failure: {server.FriendlyName()}");
+            logger.Debug($"failure: {server.ToString()}");
         }
 
         public void UpdateLastRead(Server server)
